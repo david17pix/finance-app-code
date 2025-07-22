@@ -1,0 +1,747 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "eks resources",
+    "Parameters": {
+        "customvpcCidr": {
+            "Type": "String",
+            "Default": "10.0.0.0/16"
+        },
+        "publicsubnet1Cidr": {
+            "Type": "String",
+            "Default": "10.0.1.0/24"
+        },
+        "publicsubnet2Cidr": {
+            "Type": "String",
+            "Default": "10.0.2.0/24"
+        },
+        "AmazonEKSclusterPolicy": {
+            "Type": "String",
+            "Default": " arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+        },
+        "AmazonEKSWorkerNodePolicy": {
+            "Type": "String",
+            "Default": "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+        },
+        "AmazonEC2ContainerRegistryReadOnly": {
+            "Type": "String",
+            "Default": "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+        },
+        "AmazonEKSCNIPolicy": {
+            "Type": "String",
+            "Default": "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+        },
+        "labUserPassword": {
+            "Type": "String",
+            "Default": "Password.1!!"
+        }
+    },
+    "Resources": {
+        "customvpc": {
+            "Type": "AWS::EC2::VPC",
+            "Properties": {
+                "CidrBlock": {
+                    "Ref": "customvpcCidr"
+                },
+                "EnableDnsSupport": true,
+                "EnableDnsHostnames": true,
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "customvpc"
+                    }
+                ]
+            }
+        },
+        "MyFlowLog": {
+            "Type": "AWS::EC2::FlowLog",
+            "Properties": {
+              "ResourceType": "VPC",
+              "ResourceId": {"Ref": "customvpc"},
+              "TrafficType": "ALL",
+              "LogGroupName": "MyFlowLogs",
+              "DeliverLogsPermissionArn": {"Fn::GetAtt": ["FlowLogRole", "Arn"]},
+              "LogFormat": "${account-id} ${action} ${interface-id} ${srcaddr} ${dstaddr} ${srcport} ${dstport} ${protocol} ${packets} ${bytes} ${start} ${end} ${log-status} ${region} ${version} ${tcp-flags} ${flow-direction} ${traffic-path} ${vpc-id} ${subnet-id} ${instance-id} ${pkt-srcaddr} ${pkt-dstaddr} ${pkt-src-aws-service} ${pkt-dst-aws-service}"
+            }
+          },
+          "FlowLogRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+              "AssumeRolePolicyDocument": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": {"Service": "vpc-flow-logs.amazonaws.com"},
+                    "Action": "sts:AssumeRole"
+                  }
+                ]
+              },
+              "Policies": [
+                {
+                  "PolicyName": "MyFlowLogPolicy",
+                  "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                      {
+                        "Effect": "Allow",
+                        "Action": [
+                          "logs:CreateLogGroup",
+                          "logs:CreateLogStream",
+                          "logs:PutLogEvents"
+                        ],
+                        "Resource": "arn:aws:logs:*:*:*"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+        "publicsubnet1": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "AvailabilityZone": "us-east-1a",
+                "MapPublicIpOnLaunch": true,
+                "VpcId": {
+                    "Ref": "customvpc"
+                },
+                "CidrBlock": {
+                    "Ref": "publicsubnet1Cidr"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "publicsubnet1"
+                    }
+                ]
+            }
+        },
+        "publicsubnet2": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "AvailabilityZone": "us-east-1b",
+                "MapPublicIpOnLaunch": true,
+                "VpcId": {
+                    "Ref": "customvpc"
+                },
+                "CidrBlock": {
+                    "Ref": "publicsubnet2Cidr"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "publicsubnet2"
+                    }
+                ]
+            }
+        },
+        "igateway": {
+            "Type": "AWS::EC2::InternetGateway",
+            "Properties": {
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "igateway"
+                    }
+                ]
+            }
+        },
+        "attachInternetGateway": {
+            "Type": "AWS::EC2::VPCGatewayAttachment",
+            "Properties": {
+                "InternetGatewayId": {
+                    "Ref": "igateway"
+                },
+                "VpcId": {
+                    "Ref": "customvpc"
+                }
+            }
+        },
+        "eip1": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "Domain": {
+                    "Ref": "customvpc"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "eip1"
+                    }
+                ]
+            }
+        },
+        "eip2": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "Domain": {
+                    "Ref": "customvpc"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "eip2"
+                    }
+                ]
+            }
+        },
+        "NATGateway1": {
+            "Type": "AWS::EC2::NatGateway",
+            "Properties": {
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "eip1",
+                        "AllocationId"
+                    ]
+                },
+                "SubnetId": {
+                    "Ref": "publicsubnet1"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "NATGateway1"
+                    }
+                ]
+            }
+        },
+        "NATGateway2": {
+            "Type": "AWS::EC2::NatGateway",
+            "Properties": {
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "eip2",
+                        "AllocationId"
+                    ]
+                },
+                "SubnetId": {
+                    "Ref": "publicsubnet2"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "NATGateway2"
+                    }
+                ]
+            }
+        },
+        "publicrttable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "customvpc"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "publicroutetable"
+                    }
+                ]
+            }
+        },
+        "publicdefaultroute": {
+            "Type": "AWS::EC2::Route",
+            "DependsOn": "attachInternetGateway",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "publicrttable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "igateway"
+                }
+            }
+        },
+        "assocpublicroutes1": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "publicsubnet1"
+                },
+                "RouteTableId": {
+                    "Ref": "publicrttable"
+                }
+            }
+        },
+        "assocpublicroutes2": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "publicsubnet2"
+                },
+                "RouteTableId": {
+                    "Ref": "publicrttable"
+                }
+            }
+        },
+        "customsecuritygroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupName": "customsecuritygroup",
+                "GroupDescription": "Allow http to client host",
+                "VpcId": {
+                    "Ref": "customvpc"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 443,
+                        "ToPort": 443,
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 80,
+                        "ToPort": 80,
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 8080,
+                        "ToPort": 8080,
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 22,
+                        "ToPort": 22,
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "-1",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ],
+                "SecurityGroupEgress": [
+                    
+                    {
+                        "IpProtocol": "-1",
+                        "FromPort": 0,
+                        "ToPort": 0,
+                        "CidrIpv6": "::/0"
+                    },
+                    {
+                        "IpProtocol": "-1",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            }
+        },
+        "eksclusterrole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": "eksclusterrole",
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": "eks.amazonaws.com"
+                            },
+                            "Action": "sts:AssumeRole"
+                        }
+                    ]
+                },
+                "Path": "/",
+                "ManagedPolicyArns": [
+                    {
+                        "Ref": "AmazonEKSclusterPolicy"
+                    }
+                ]
+            }
+        },
+        "pcNationalbucket": {
+            "Type": "AWS::S3::Bucket",
+            "Properties": {
+                "BucketName": {
+                    "Fn::Sub": "pc-national-bank-${AWS::AccountId}-${AWS::Region}-${AWS::StackName}"
+                },
+              "AccessControl": "Private"
+            }
+        },
+        "s3appolicy1": {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyName": "s3appolicy1",
+                "Roles": [
+                    {
+                        "Ref": "noderole"
+                    }
+                ],
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "iam:PassRole",
+                                "sagemaker:CreateNotebookInstance",
+                                "sagemaker:CreateProcessingJob",
+                                "sagemaker:CreateTrainingJob",
+                                "ec2:*",
+                                "elasticloadbalancing:*",
+                                "cloudwatch:*",
+                                "autoscaling:*",
+                                "iam:CreateServiceLinkedRole",
+                                "s3:GetObject",
+                                "s3:GetObjectVersionTagging",
+                                "s3:GetStorageLensConfigurationTagging",
+                                "s3:GetObjectAcl",
+                                "s3:GetBucketObjectLockConfiguration",
+                                "s3:GetIntelligentTieringConfiguration",
+                                "s3:DeleteAccessPointPolicyForObjectLambda",
+                                "s3:DeleteJobTagging",
+                                "s3:GetObjectVersionAcl",
+                                "s3:PutBucketAcl",
+                                "s3:PutObjectTagging",
+                                "s3:DeleteObjectTagging",
+                                "s3:PutAccessPointPolicyForObjectLambda",
+                                "s3:GetBucketPolicyStatus",
+                                "s3:GetObjectRetention",
+                                "s3:GetBucketWebsite",
+                                "s3:PutMultiRegionAccessPointPolicy",
+                                "s3:GetJobTagging",
+                                "s3:DeleteStorageLensConfigurationTagging",
+                                "s3:GetMultiRegionAccessPoint",
+                                "s3:GetObjectAttributes",
+                                "s3:DeleteObjectVersionTagging",
+                                "s3:GetObjectLegalHold",
+                                "s3:GetBucketNotification",
+                                "s3:DeleteBucketPolicy",
+                                "s3:DescribeMultiRegionAccessPointOperation",
+                                "s3:GetReplicationConfiguration",
+                                "s3:ListBucket",
+                                "s3:ListMultipartUploadParts",
+                                "s3:DescribeJob",
+                                "s3:PutObjectVersionAcl",
+                                "s3:GetAnalyticsConfiguration",
+                                "s3:GetObjectVersionForReplication",
+                                "s3:PutAccessPointPolicy",
+                                "s3:GetAccessPointForObjectLambda",
+                                "s3:GetStorageLensDashboard",
+                                "s3:GetLifecycleConfiguration",
+                                "s3:GetInventoryConfiguration",
+                                "s3:GetBucketTagging",
+                                "s3:GetAccessPointPolicyForObjectLambda",
+                                "s3:GetBucketLogging",
+                                "s3:ListBucketVersions",
+                                "s3:ReplicateTags",
+                                "s3:GetAccelerateConfiguration",
+                                "s3:GetObjectVersionAttributes",
+                                "s3:GetBucketPolicy",
+                                "s3:GetEncryptionConfiguration",
+                                "s3:GetObjectVersionTorrent",
+                                "s3:PutBucketTagging",
+                                "s3:GetBucketRequestPayment",
+                                "s3:GetAccessPointPolicyStatus",
+                                "s3:GetObjectTagging",
+                                "s3:GetMetricsConfiguration",
+                                "s3:GetBucketOwnershipControls",
+                                "s3:PutObjectAcl",
+                                "s3:GetBucketPublicAccessBlock",
+                                "s3:GetMultiRegionAccessPointPolicyStatus",
+                                "s3:ListBucketMultipartUploads",
+                                "s3:PutBucketPublicAccessBlock",
+                                "s3:GetMultiRegionAccessPointPolicy",
+                                "s3:GetAccessPointPolicyStatusForObjectLambda",
+                                "s3:PutStorageLensConfigurationTagging",
+                                "s3:PutObjectVersionTagging",
+                                "s3:PutJobTagging",
+                                "s3:GetBucketVersioning",
+                                "s3:GetBucketAcl",
+                                "s3:GetAccessPointConfigurationForObjectLambda",
+                                "s3:BypassGovernanceRetention",
+                                "s3:GetObjectTorrent",
+                                "s3:ObjectOwnerOverrideToBucketOwner",
+                                "s3:GetMultiRegionAccessPointRoutes",
+                                "s3:GetStorageLensConfiguration",
+                                "s3:GetBucketCORS",
+                                "s3:PutBucketPolicy",
+                                "s3:DeleteAccessPointPolicy",
+                                "s3:GetBucketLocation",
+                                "s3:GetAccessPointPolicy",
+                                "s3:GetObjectVersion",
+                                "ec2:RunInstances",
+                                "lambda:InvokeFunction"
+                            ],
+                            "Resource": {
+                                "Fn::GetAtt": ["pcNationalbucket", "Arn"]
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        "ec2instancepolicy": {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyName": "ec2instancepolicy2",
+                "Roles": [
+                    {
+                        "Ref": "noderole"
+                    }
+                ],
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Sid": "VisualEditor0",
+                            "Effect": "Allow",
+                            "Action": [
+                              "s3:*",
+                              "cloudwatch:*",
+                              "ecr:GetAuthorizationToken",
+                              "ecr:BatchCheckLayerAvailability",
+                              "ecr:GetDownloadUrlForLayer",
+                              "ecr:BatchGetImage",
+                              "logs:CreateLogStream",
+                              "logs:PutLogEvents",
+                              "iam:PassRole",
+                              "iam:ListAttachedUserPolicies",
+                              "iam:GetRole",
+                              "iam:GetRolePolicy",
+                              "ec2:DescribeInstances",
+                              "ec2:CreateKeyPair",
+                              "ec2:RunInstances",
+                              "ec2:TerminateInstances",
+                              "iam:ListRoles",
+                              "iam:ListInstanceProfiles",
+                              "iam:ListAttachedRolePolicies",
+                              "iam:GetPolicyVersion",
+                              "iam:GetPolicy",
+                              "ec2:AssociateIamInstanceProfile"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "lambda:ListProvisionedConcurrencyConfigs",
+                                "lambda:ListFunctionEventInvokeConfigs",
+                                "lambda:ListFunctions",
+                                "lambda:ListFunctionsByCodeSigningConfig",
+                                "lambda:InvokeFunction",
+                                "lambda:ListVersionsByFunction",
+                                "lambda:ListAliases",
+                                "lambda:ListEventSourceMappings",
+                                "lambda:ListFunctionUrlConfigs",
+                                "lambda:ListLayerVersions",
+                                "lambda:ListLayers",
+                                "lambda:ListCodeSigningConfigs"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                          "Effect": "Allow",
+                          "Action": [
+                            "ec2:DescribeSecurityGroups",
+                            "ec2:DescribeSecurityGroupRules",
+                            "ec2:DescribeTags"
+                          ],
+                          "Resource": "*"
+                        },
+                        {
+                      "Effect": "Allow",
+                      "Action": [
+                         "ec2:AuthorizeSecurityGroupIngress", 
+                         "ec2:RevokeSecurityGroupIngress", 
+                         "ec2:AuthorizeSecurityGroupEgress", 
+                         "ec2:RevokeSecurityGroupEgress", 
+                         "ec2:ModifySecurityGroupRules",
+                         "ec2:UpdateSecurityGroupRuleDescriptionsIngress", 
+                         "ec2:UpdateSecurityGroupRuleDescriptionsEgress"
+                      ],
+                      "Resource": "*"
+                     },   
+                     {
+                      "Effect": "Allow",
+                      "Action": [
+                         "ec2:ModifySecurityGroupRules"
+                      ],
+                      "Resource": "*"
+                     }
+                    ]
+                }
+            }
+        },
+        "noderole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": "EKSNodeGroupRole",
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": "ec2.amazonaws.com"
+                            },
+                            "Action": "sts:AssumeRole"
+                        }
+                    ]
+                },
+                "Path": "/",
+                "ManagedPolicyArns": [
+                    {
+                        "Ref": "AmazonEKSWorkerNodePolicy"
+                    },
+                    {
+                        "Ref": "AmazonEC2ContainerRegistryReadOnly"
+                    },
+                    {
+                        "Ref": "AmazonEKSCNIPolicy"
+                    }
+                ]
+            }
+        },
+        "ekscluster": {
+            "Type": "AWS::EKS::Cluster",
+            "Properties": {
+                "Name": "pc-national-bank-kubecon",
+                "Version": "1.27",
+                "RoleArn": {
+                    "Fn::GetAtt": [
+                        "eksclusterrole",
+                        "Arn"
+                    ]
+                },
+                "ResourcesVpcConfig": {
+                    "SecurityGroupIds": [
+                        {
+                            "Ref": "customsecuritygroup"
+                        }
+                    ],
+                    "SubnetIds": [
+                        {
+                            "Ref": "publicsubnet1"
+                        },
+                        {
+                            "Ref": "publicsubnet2"
+                        }
+                    ]
+                }
+            }
+        },
+        "EKSNodegroup": {
+            "Type": "AWS::EKS::Nodegroup",
+            "Properties": {
+                "ClusterName": {
+                    "Ref": "ekscluster"
+                },
+                "NodeRole": {
+                    "Fn::GetAtt": [
+                        "noderole",
+                        "Arn"
+                    ]
+                },
+                "ScalingConfig": {
+                    "MinSize": 1,
+                    "DesiredSize": 3,
+                    "MaxSize": 3
+                },
+                "UpdateConfig": {
+                    "MaxUnavailable": 1
+                },
+                "AmiType": "AL2_x86_64",
+				"LaunchTemplate": {
+					"Id": {
+						"Ref": "EKSNodegroupTemplate"
+					}
+				},
+                "CapacityType": "ON_DEMAND",
+                "InstanceTypes" : ["t3.medium"],
+                "Subnets": [
+                    {
+                        "Ref": "publicsubnet1"
+                    },
+                    {
+                        "Ref": "publicsubnet2"
+                    }
+                ]
+            }
+        },
+		"EKSNodegroupTemplate": {
+		    "Type": "AWS::EC2::LaunchTemplate",
+		    "Properties": {
+		  		"LaunchTemplateName": "pc-national-bank-kubecon",
+		  		"LaunchTemplateData":{
+                    "BlockDeviceMappings": [
+                        {
+                            "DeviceName": "/dev/xvda",
+                            "Ebs": {
+                                "VolumeSize": 20
+                            }
+                        }
+                    ],
+                    "MetadataOptions": {
+                        "HttpTokens": "optional"
+                    }
+		  		}
+		    }
+		},
+        "EKSAddons1": {
+            "Type" : "AWS::EKS::Addon",
+            "Properties": {
+                "ClusterName": {
+                    "Ref": "ekscluster"
+                },
+                "AddonName": "kube-proxy",
+                "AddonVersion": "v1.27.1-eksbuild.1",
+                "ResolveConflicts": "OVERWRITE"
+            }
+        },
+        "EKSAddons2": {
+            "Type" : "AWS::EKS::Addon",
+            "Properties": {
+                "ClusterName": {
+                    "Ref": "ekscluster"
+                },
+                "AddonName": "vpc-cni",
+                "AddonVersion": "v1.12.6-eksbuild.2",
+                "ResolveConflicts": "OVERWRITE"
+            }
+        },
+        "EKSAddons3": {
+            "Type" : "AWS::EKS::Addon",
+            "Properties": {
+                "ClusterName": {
+                    "Ref": "ekscluster"
+                },
+                "AddonName": "coredns",
+                "AddonVersion": "v1.10.1-eksbuild.1",
+                "ResolveConflicts": "OVERWRITE"
+            }
+        },
+        "EKSAddons4": {
+            "Type" : "AWS::EKS::Addon",
+            "Properties": {
+                "ClusterName": {
+                    "Ref": "ekscluster"
+                },
+                "AddonName": "aws-ebs-csi-driver",
+                "AddonVersion": "v1.22.0-eksbuild.2",
+                "ResolveConflicts": "OVERWRITE"
+            }
+        }
+    },
+    
+    "Outputs": {
+        "publicsubnet1":{
+            "Value":{
+                "Ref": "publicsubnet1"
+            }
+        },
+        
+        "publicsubnet2":{
+            "Value":{
+                "Ref": "publicsubnet2"
+            }
+        },
+        "securityGroupId":{
+            "Value":{
+                "Ref": "customsecuritygroup"
+            }
+        }
+    }
+}

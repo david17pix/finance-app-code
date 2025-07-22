@@ -1,0 +1,32 @@
+version: 0.2
+env:
+  secrets-manager:
+    AWS_KEY_ID: AppDeploy
+    DOCKERHUB_PASS: AppDeploy
+    DOCKERHUB_USERNAME: AppDeploy
+phases:
+  install: # Install AWS cli, maven
+    runtime-versions:
+      java: latest
+    commands:
+       - apt-get update
+       - apt-get install -y git python3 python3-pip
+       - pip install awscli
+       - curl -o aws-iam-authenticator https://s3.us-west-2.amazonaws.com/amazon-eks/1.21.2/2021-07-05/bin/linux/amd64/aws-iam-authenticator
+       - chmod +x ./aws-iam-authenticator
+       - mkdir -p $HOME/bin && cp ./aws-iam-authenticator $HOME/bin/aws-iam-authenticator && export PATH=$PATH:$HOME/bin
+       - apt-get install -y wget apt-transport-https gnupg lsb-release
+
+  pre_build: # Check availability of Maven and it's version
+    commands:
+      - echo -e '\nMaven version:'
+      - mvn --version
+      - python -V
+
+  build: # Build Docker image,tag it with the commit sha, push the docker image to ECR
+    commands:
+      - chmod +x ./aws-cicd/scripts/build.sh
+      - ./aws-cicd/scripts/build.sh
+cache:
+  paths:
+    - '/root/.m2/**/*'

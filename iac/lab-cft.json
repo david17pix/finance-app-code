@@ -44,12 +44,6 @@
                 },
                 "EnableDnsSupport": true,
                 "EnableDnsHostnames": true,
-                "Tags": [
-                    {
-                        "Key": "Name",
-                        "Value": "customvpc"
-                    }
-                ]
             }
         },
         "MyFlowLog": {
